@@ -1,0 +1,9 @@
+.nvim-session.vim
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.pdf
+*.gz
+*.toc
