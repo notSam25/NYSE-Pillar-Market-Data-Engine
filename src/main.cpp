@@ -1,6 +1,8 @@
 #include <common.hpp>
 
 int main() {
-  std::cout << "Hello, World!\n";
+
+  spdlog::set_level(spdlog::level::trace);
+  spdlog::info("Hello, World!");
   return 0lu;
 }

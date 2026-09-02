@@ -1,3 +1,11 @@
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.15.0)
+
+FetchContent_MakeAvailable(spdlog)
+
 cmake_minimum_required(VERSION 3.13)
 
 project(EngineDataEngine LANGUAGES CXX)
@@ -45,4 +53,9 @@ target_link_options(${PROJECT_NAME}
             -fsanitize=address,undefined
             -fno-omit-frame-pointer
         >
+)
+
+target_link_libraries(${PROJECT_NAME}
+  PRIVATE
+    spdlog::spdlog_header_only
 )
