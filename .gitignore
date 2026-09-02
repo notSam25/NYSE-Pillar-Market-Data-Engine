@@ -12,3 +12,6 @@
 
 # Marketdata
 *.csv
+
+# Build
+build/
