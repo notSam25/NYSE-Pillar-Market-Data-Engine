@@ -6,6 +6,8 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(spdlog)
 
+option(NYSE_PILLAR_TAQ "Use the NYSE_PILLAR_TAQ format" ON)
+
 cmake_minimum_required(VERSION 3.13)
 
 project(EngineDataEngine LANGUAGES CXX)
@@ -18,18 +20,22 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-add_executable(${PROJECT_NAME} ${APP_SOURCES})
+add_library(${PROJECT_NAME} ${APP_SOURCES})
 
 target_include_directories(${PROJECT_NAME}
-    PRIVATE
+  # TODO: make this private except for the API
+  PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC NYSE_PILLAR_TAQ)
+if(NYSE_PILLAR_TAQ)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC NYSE_PILLAR_TAQ)
+endif()
+
 
 # Warnings used in every build configuration
 target_compile_options(${PROJECT_NAME}
-    PRIVATE
+  PUBLIC
         -Wno-unknown-pragmas
         -Wno-deprecated-declarations
         -Wall
@@ -39,7 +45,7 @@ target_compile_options(${PROJECT_NAME}
 
 # Debug-only compiler options
 target_compile_options(${PROJECT_NAME}
-    PRIVATE
+  PUBLIC
         $<$<CONFIG:Debug>:
             -fsanitize=address,undefined
             -fno-omit-frame-pointer
@@ -50,7 +56,7 @@ target_compile_options(${PROJECT_NAME}
 
 # Debug-only linker options
 target_link_options(${PROJECT_NAME}
-    PRIVATE
+  PUBLIC
         $<$<CONFIG:Debug>:
             -fsanitize=address,undefined
             -fno-omit-frame-pointer
@@ -58,6 +64,8 @@ target_link_options(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-  PRIVATE
+  PUBLIC
     spdlog::spdlog_header_only
 )
+
+add_subdirectory(tests)

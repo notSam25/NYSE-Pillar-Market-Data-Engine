@@ -3,7 +3,7 @@
 
 // TODO: this should be removed, as in the future the mde portion should be an
 // library that's imported. Fine for early testing to iron out the API though.
-int main() {
+/*int main() {
 
   spdlog::set_level(spdlog::level::trace);
   spdlog::info("Hello, World!");
@@ -12,4 +12,4 @@ int main() {
   (void)engine;
 
   return 0lu;
-}
+}*/
