@@ -8,10 +8,10 @@
 #endif
 
 namespace mde {
-Engine::Engine(IngestData ingestType, const std::filesystem::path &ingestData) {
+Engine::Engine(IngestData IngestType, const std::filesystem::path &ingestData) {
 
-  if (ingestType == IngestData::None || ingestType >= IngestData::INVALID) {
-    throw std::runtime_error(std::format("invalid ingestType was supplied"));
+  if (IngestType == IngestData::None || IngestType >= IngestData::INVALID) {
+    throw std::runtime_error(std::format("invalid IngestType was supplied"));
   }
 
   if (false == std::filesystem::exists(ingestData)) {
@@ -19,8 +19,8 @@ Engine::Engine(IngestData ingestType, const std::filesystem::path &ingestData) {
         std::format("invalid ingestData path was supplied"));
   }
 
-  _ingestType = ingestType;
-  _ingestData = ingestData;
+  _ingestType = IngestType;
+  _ingestPath = ingestData;
 
   // Compile definition
 #ifdef NYSE_PILLAR_TAQ
@@ -29,19 +29,43 @@ Engine::Engine(IngestData ingestType, const std::filesystem::path &ingestData) {
 
   spdlog::info(std::format(
       "Created new Engine instance with ingest type: {}, with data path: {}",
-      static_cast<uint8_t>(_ingestType), _ingestData.string()));
-
-  // TODO: this code should be refactored to be in a unit test, integration
-  // test, and whatever else
-  const std::string testString = "123,456,,,";
-  auto vec = std::make_unique<std::vector<std::uint8_t>>(testString.begin(),
-                                                         testString.end());
-
-  if (auto parse = _parser->ParseNext(std::move(vec)); parse) {
-    spdlog::trace("Parsed message");
-  } else {
-    spdlog::error(std::format("Failed to parse message: {}", parse.error()));
-  }
+      static_cast<uint8_t>(_ingestType), _ingestPath->string()));
 }
+
+#ifndef NDEBUG
+Engine::Engine(IngestData IngestType,
+               const std::vector<std::string> &IngestData)
+    : _ingestData(IngestData) {
+
+  if (IngestType == IngestData::None || IngestType >= IngestData::INVALID) {
+    throw std::runtime_error(std::format("invalid IngestType was supplied"));
+  }
+
+  _ingestType = IngestType;
+}
+
+void Engine::ParseData() {
+  // Compile definition
+#ifdef NYSE_PILLAR_TAQ
+  _parser = std::make_unique<mde::schema::nyse::Parser>();
+#endif
+
+  for (const auto &line : _ingestData) {
+
+    if (auto result =
+            _parser->ParseNext(std::make_unique<std::vector<std::uint8_t>>(
+                line.begin(), line.end()));
+        result) {
+      _parseMetrics._success++;
+    }
+
+    _parseMetrics._total++;
+  }
+
+  spdlog::info(std::format("Parsed {}/{} correctly", _parseMetrics._success,
+                           _parseMetrics._total));
+}
+
+#endif
 
 } // namespace mde

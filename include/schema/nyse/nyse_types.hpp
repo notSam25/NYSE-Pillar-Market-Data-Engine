@@ -17,7 +17,7 @@ namespace mde::schema::nyse {
 enum class ParseError { InvalidNumber, OutOfRange, TrailingCharacters };
 
 template <typename T>
-  requires(!std::same_as<T, bool> &&
+  requires(!std::same_as<T, bool> && !std::same_as<T, char> &&
            (std::integral<T> || std::floating_point<T>))
 static std::expected<T, ParseError>
 parse_std_type(std::string_view text) noexcept {
@@ -90,6 +90,25 @@ private:
 };
 namespace messages {
 
+#define POPULATE_FIELD(name, type, index)                                      \
+  if (auto fieldString = csvReader.GetField(index); fieldString) {             \
+    if (auto field = mde::schema::nyse::parse_std_type<type>(*fieldString);    \
+        field) {                                                               \
+      name = *field;                                                           \
+    } else {                                                                   \
+      throw std::runtime_error(                                                \
+          std::format("Failed to parse {} from provided string: {}", #name,    \
+                      *fieldString));                                          \
+    }                                                                          \
+  } else {                                                                     \
+    throw std::runtime_error(                                                  \
+        std::format("Failed to find {} field in string: {}", #name, text));    \
+  }
+
+// TODO: consider custom struct generation with pp-macros
+// Something along the lines of defining a struct with the datatypes, then the
+// pp-macro will auto populate the internal structure members
+
 struct MessageHeader {
 public:
   explicit MessageHeader(const std::vector<std::uint8_t> &data) {
@@ -97,35 +116,8 @@ public:
                                 data.size()};
     mde::schema::nyse::CSVReader csvReader{text};
 
-    // Get the MsgType
-    if (auto fieldString = csvReader.GetField(0); fieldString) {
-      if (auto field = mde::schema::nyse::parse_std_type<uint8_t>(*fieldString);
-          field) {
-        _msgType = *field;
-      } else {
-        throw std::runtime_error(std::format(
-            "Failed to parse _msgType from provided string: {}", *fieldString));
-      }
-    } else {
-      throw std::runtime_error(
-          std::format("Failed to find _msgType field in string: {}", text));
-    }
-
-    // Get the SequenceNumber
-    if (auto fieldString = csvReader.GetField(1); fieldString) {
-      if (auto field =
-              mde::schema::nyse::parse_std_type<uint64_t>(*fieldString);
-          field) {
-        _sequenceNumber = *field;
-      } else {
-        throw std::runtime_error(std::format(
-            "Failed to parse _sequenceNumber from provided string: {}",
-            *fieldString));
-      }
-    } else {
-      throw std::runtime_error(std::format(
-          "Failed to find _sequenceNumber field in string: {}", text));
-    }
+    POPULATE_FIELD(_msgType, uint8_t, 0)
+    POPULATE_FIELD(_sequenceNumber, uint64_t, 1)
   }
 
   std::uint8_t _msgType;
@@ -133,6 +125,55 @@ public:
 };
 
 struct SymbolIndexMapping {
+  SymbolIndexMapping(const std::vector<std::uint8_t> &data) : _header(data) {
+    const std::string_view text{reinterpret_cast<const char *>(data.data()),
+                                data.size()};
+    mde::schema::nyse::CSVReader csvReader{text};
+
+    // POPULATE_FIELD(_symbol, std::string, 2);
+    if (auto field = csvReader.GetField(2); field) {
+      _symbol = *field;
+    } else {
+      throw std::runtime_error(
+          std::format("Failed to retrieve value for _symbol: {}",
+                      static_cast<uint8_t>(field.error())));
+    }
+
+    POPULATE_FIELD(_marketId, uint8_t, 3);
+    POPULATE_FIELD(_systemId, uint8_t, 4);
+    if (auto field = csvReader.GetField(5); field) {
+      _exchangeCode = field->at(0);
+    } else {
+      throw std::runtime_error(
+          std::format("Failed to retrieve value for _exchangeCode: {}",
+                      static_cast<uint8_t>(field.error())));
+    }
+
+    if (auto field = csvReader.GetField(6); field) {
+      _securityType = field->at(0);
+    } else {
+      throw std::runtime_error(
+          std::format("Failed to retrieve value for _securityType: {}",
+                      static_cast<uint8_t>(field.error())));
+    }
+
+    POPULATE_FIELD(_lotSize, uint64_t, 7);
+    POPULATE_FIELD(_prevClosePrice, double, 8);
+    POPULATE_FIELD(_prevCloseVolume, uint64_t, 9);
+    POPULATE_FIELD(_priceResolution, uint8_t, 10);
+
+    if (auto field = csvReader.GetField(11); field) {
+      _roundLot = field->at(0);
+    } else {
+      throw std::runtime_error(
+          std::format("Failed to retrieve value for _roundLot: {}",
+                      static_cast<uint8_t>(field.error())));
+    }
+
+    POPULATE_FIELD(_mpv, double, 12);
+    POPULATE_FIELD(_unitOfTrade, uint8_t, 13);
+  }
+
   MessageHeader _header;
   std::string _symbol;
   uint8_t _marketId;
@@ -140,12 +181,12 @@ struct SymbolIndexMapping {
   char _exchangeCode;
   char _securityType;
   uint64_t _lotSize;
-  float _prevClosePrice;
-  uint64_t _prevCloseVolume; // Data looks like it's uint, potentially floating
-                             // for fractional volume?
+  double _prevClosePrice;
+  uint64_t _prevCloseVolume; // Data looks like it's uint, potentially
+                             // floating for fractional volume?
   uint8_t _priceResolution;
   char _roundLot;
-  float _mpv;
+  double _mpv;
   uint8_t _unitOfTrade;
 };
 

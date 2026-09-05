@@ -3,6 +3,14 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
+#include "model.hpp"
+
+constexpr uint8_t SymbolIndexMapping = 3u;
+constexpr uint8_t SecurityStatusMessage = 34u;
+constexpr uint8_t AddOrder = 100u;
+constexpr uint8_t ModifyOrder = 101u;
+constexpr uint8_t ReplaceOrder = 102u;
+
 namespace mde::schema::nyse {
 
 class Parser final : public mde::schema::Parser {
@@ -10,16 +18,35 @@ public:
   Parser() = default;
   ~Parser() = default;
 
-  std::expected<bool, std::string>
-  ParseNext(std::unique_ptr<std::vector<uint8_t>> data) noexcept override {
+  bool ParseNext(std::unique_ptr<std::vector<uint8_t>> data) noexcept override {
     try {
       messages::MessageHeader messageHeader{*data};
-      spdlog::debug(
-          std::format("MessageHeader:\n\tMsgType: {}\n\tSequenceNumber: {}",
-                      messageHeader._msgType, messageHeader._sequenceNumber));
+
+      if (messageHeader._sequenceNumber != _lineData._lastSequenceNumber + 1) {
+        // Don't return from here, since we can't ask to retransmit this data.
+        // We're stuck with the loss.
+
+        _lineData._detectedGaps++;
+        spdlog::warn("Unexpected sequence number");
+      }
+
+      switch (messageHeader._msgType) {
+      case SymbolIndexMapping: {
+        // TODO: To be filled in
+        mde::schema::nyse::model::ProcessSymbolIndexMapping(std::move(data));
+        break;
+      }
+      default: {
+        spdlog::warn(std::format("Encountered unimplemented MsgType: {}",
+                                 messageHeader._msgType));
+        return false;
+      }
+      }
+
+      _lineData._lastSequenceNumber = messageHeader._sequenceNumber;
     } catch (const std::runtime_error &re) {
-      return std::unexpected(
-          std::format("Failed to parse MessageHeader: {}", re.what()));
+      spdlog::warn(std::format("Failed to parse MessageHeader: {}", re.what()));
+      return false;
     }
 
     return true;

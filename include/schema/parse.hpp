@@ -7,9 +7,8 @@
  * */
 
 #pragma once
-#include "model.hpp"
 #include <cstdint>
-#include <expected>
+#include <memory>
 #include <vector>
 
 namespace mde::schema {
@@ -21,16 +20,22 @@ namespace mde::schema {
  * */
 class Parser {
 public:
+  virtual ~Parser() = default;
+
   /**
-   * This function should be implemented by extending classes. Note that data
+   * This function should be implemented by extending classes. Note that `data`
    * ownership is passed down to this function.
    * `data` is the csv string from TAQ data.
+   * @return boolean for success parse->model->view
    */
-  virtual std::expected<bool, std::string>
+  virtual bool
   ParseNext(std::unique_ptr<std::vector<uint8_t>> data) noexcept = 0;
 
 protected:
-  std::unique_ptr<Model> _model;
+  struct {
+    uint64_t _lastSequenceNumber = 0;
+    uint64_t _detectedGaps = 0;
+  } _lineData;
 };
 
 } // namespace mde::schema
