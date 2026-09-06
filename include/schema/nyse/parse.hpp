@@ -53,3 +53,22 @@ public:
   };
 };
 } // namespace mde::schema::nyse
+
+namespace test {
+#define DECLARE_MEMBER(name, type) type name;
+
+#define DEFINE_STRUCT(struct_name, members)                                    \
+  struct struct_name {                                                         \
+    members(DECLARE_MEMBER)                                                    \
+                                                                               \
+        struct_name() {}                                                       \
+  };
+
+#define DERIVED_MEMBERS(X)                                                     \
+  X(_a, std::uint8_t)                                                          \
+  X(_b, std::uint64_t)                                                         \
+  X(_c, char)                                                                  \
+  X(_d, std::string)
+
+DEFINE_STRUCT(derived, DERIVED_MEMBERS)
+} // namespace test

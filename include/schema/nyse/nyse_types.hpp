@@ -124,6 +124,10 @@ public:
   std::uint64_t _sequenceNumber;
 };
 
+// TODO: Add some sort of context-aware system to reduce redundant work done by
+// the CSV parser. E.g., MessageHeader does not need to be parsed twice. For
+// reference there's also some info about optimizing the parser itself around
+// that class decl.
 struct SymbolIndexMapping {
   SymbolIndexMapping(const std::vector<std::uint8_t> &data) : _header(data) {
     const std::string_view text{reinterpret_cast<const char *>(data.data()),
