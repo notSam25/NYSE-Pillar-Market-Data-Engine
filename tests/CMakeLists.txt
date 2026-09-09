@@ -25,6 +25,11 @@ target_link_libraries(unit_tests
         GTest::gtest_main
 )
 
+target_compile_definitions(unit_tests
+    PRIVATE
+    NYSE_TAQ_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
+)
+
 gtest_discover_tests(unit_tests)
 
 # Standalone test programs
