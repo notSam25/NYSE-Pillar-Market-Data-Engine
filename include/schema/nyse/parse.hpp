@@ -1,5 +1,8 @@
+#include "../parse.hpp"
 #include "nyse_types.hpp"
-#include <schema/parse.hpp>
+#include "csv.hpp"
+#include <cstdint>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
@@ -10,9 +13,9 @@ constexpr uint8_t SecurityStatusMessage = 34u;
 constexpr uint8_t AddOrder = 100u;
 constexpr uint8_t ModifyOrder = 101u;
 constexpr uint8_t ReplaceOrder = 102u;
+#include <format>
 
 namespace mde::schema::nyse {
-
 class Parser final : public mde::schema::Parser {
 public:
   Parser() = default;
@@ -20,7 +23,11 @@ public:
 
   bool ParseNext(std::unique_ptr<std::vector<uint8_t>> data) noexcept override {
     try {
-      messages::MessageHeader messageHeader{*data};
+      const std::string_view text{reinterpret_cast<const char *>(data->data()),
+                                  data->size()};
+      mde::schema::nyse::CSVReader csvReader{text};
+
+      messages::MessageHeader messageHeader{&csvReader};
 
       if (messageHeader._sequenceNumber != _lineData._lastSequenceNumber + 1) {
         // Don't return from here, since we can't ask to retransmit this data.
@@ -32,8 +39,8 @@ public:
 
       switch (messageHeader._msgType) {
       case SymbolIndexMapping: {
-        // TODO: To be filled in
-        mde::schema::nyse::model::ProcessSymbolIndexMapping(std::move(data));
+        messages::SymbolIndexMapping message{&csvReader};
+        mde::schema::nyse::model::ProcessSymbolIndexMapping(std::move(message));
         break;
       }
       default: {
@@ -53,22 +60,3 @@ public:
   };
 };
 } // namespace mde::schema::nyse
-
-namespace test {
-#define DECLARE_MEMBER(name, type) type name;
-
-#define DEFINE_STRUCT(struct_name, members)                                    \
-  struct struct_name {                                                         \
-    members(DECLARE_MEMBER)                                                    \
-                                                                               \
-        struct_name() {}                                                       \
-  };
-
-#define DERIVED_MEMBERS(X)                                                     \
-  X(_a, std::uint8_t)                                                          \
-  X(_b, std::uint64_t)                                                         \
-  X(_c, char)                                                                  \
-  X(_d, std::string)
-
-DEFINE_STRUCT(derived, DERIVED_MEMBERS)
-} // namespace test

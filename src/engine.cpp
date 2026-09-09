@@ -49,7 +49,6 @@ void Engine::ParseData() {
 #ifdef NYSE_PILLAR_TAQ
   _parser = std::make_unique<mde::schema::nyse::Parser>();
 #endif
-
   for (const auto &line : _ingestData) {
 
     if (auto result =

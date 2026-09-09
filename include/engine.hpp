@@ -39,8 +39,8 @@ public:
 
 private:
   struct {
-    uint64_t _success;
-    uint64_t _total;
+    uint64_t _success = 0;
+    uint64_t _total = 0;
   } _parseMetrics;
 
   std::unique_ptr<mde::schema::Parser> _parser;
