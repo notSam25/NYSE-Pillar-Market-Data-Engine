@@ -15,3 +15,6 @@
 
 # Build
 build/
+
+# Docs (untracked; local prep/notes only)
+docs/
