@@ -49,13 +49,32 @@ void Engine::ParseData() {
 #ifdef NYSE_PILLAR_TAQ
   _parser = std::make_unique<mde::schema::nyse::Parser>();
 #endif
+  /*
+   * gap
+   * XDV
+   * success rate
+   * tests{example, unit}
+   * */
   for (const auto &line : _ingestData) {
 
-    if (auto result =
-            _parser->ParseNext(std::make_unique<std::vector<std::uint8_t>>(
-                line.begin(), line.end()));
-        result) {
+    switch (_parser->ParseNext(std::make_unique<std::vector<std::uint8_t>>(
+        line.begin(), line.end()))) {
+    case mde::schema::Parser::ParseError::none: {
       _parseMetrics._success++;
+      break;
+    }
+    case mde::schema::Parser::ParseError::unknown_msg_type: {
+      spdlog::warn("Failed to parse message: unknown_msg_type");
+      break;
+    }
+    case mde::schema::Parser::ParseError::message_decode: {
+      spdlog::warn("Failed to parse message: message_decode");
+      break;
+    }
+    default: {
+      spdlog::error("Failed to parse message: unknown error has occured");
+      exit(1);
+    }
     }
 
     _parseMetrics._total++;

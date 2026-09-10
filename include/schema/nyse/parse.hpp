@@ -1,6 +1,6 @@
 #include "../parse.hpp"
-#include "nyse_types.hpp"
 #include "csv.hpp"
+#include "nyse_types.hpp"
 #include <cstdint>
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -21,7 +21,8 @@ public:
   Parser() = default;
   ~Parser() = default;
 
-  bool ParseNext(std::unique_ptr<std::vector<uint8_t>> data) noexcept override {
+  ParseError ParseNext(
+      std::unique_ptr<const std::vector<uint8_t>> data) noexcept override {
     try {
       const std::string_view text{reinterpret_cast<const char *>(data->data()),
                                   data->size()};
@@ -46,17 +47,20 @@ public:
       default: {
         spdlog::warn(std::format("Encountered unimplemented MsgType: {}",
                                  messageHeader._msgType));
-        return false;
+        return ParseError::unknown_msg_type;
       }
       }
 
       _lineData._lastSequenceNumber = messageHeader._sequenceNumber;
-    } catch (const std::runtime_error &re) {
-      spdlog::warn(std::format("Failed to parse MessageHeader: {}", re.what()));
-      return false;
+    } catch (const CSVReader::Error &e) {
+      spdlog::warn(std::format("Failed to parse message: {} (field {})",
+                               e.what(), e.fieldIndex));
+      return ParseError::message_decode;
+    } catch (const std::exception &e) {
+      spdlog::warn(std::format("Failed to parse MessageHeader: {}", e.what()));
+      return ParseError::unknown;
     }
-
-    return true;
+    return ParseError::none;
   };
 };
 } // namespace mde::schema::nyse

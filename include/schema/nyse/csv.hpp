@@ -50,6 +50,19 @@ public:
 
   enum class FieldParseError { InvalidFieldNum = 0 };
 
+  struct Error : public std::runtime_error {
+    enum class Kind { FieldNotFound, InvalidCharCount, ParseFailure };
+
+    Kind kind;
+    std::size_t fieldIndex;
+
+    Error(Kind k, std::size_t idx, std::string msg)
+        : std::runtime_error{std::move(msg)}, kind(k), fieldIndex(idx) {}
+
+    Kind getKind() const noexcept { return kind; }
+  };
+
+
   /*
    * Returns the view to the specified field number or an unexpected error.
    * `FieldNum` is the zero-index field number you wish to grab.
@@ -116,8 +129,8 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
   auto field = csvReader->GetField(idx);
 
   if (!field) {
-    throw std::runtime_error{"Failed to read CSV field at index " +
-                             std::to_string(idx)};
+    throw CSVReader::Error{CSVReader::Error::Kind::FieldNotFound, idx,
+                           std::format("Failed to read CSV field at index {}", idx)};
   }
 
   const std::string_view value = *field;
@@ -125,9 +138,9 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
   if constexpr (std::same_as<T, char>) {
 
     if (value.size() != 1) {
-      throw std::runtime_error{
-          "Expected exactly one character at CSV field index " +
-          std::to_string(idx)};
+      throw CSVReader::Error{CSVReader::Error::Kind::InvalidCharCount, idx,
+                               std::format("Expected exactly one character at CSV field index {}",
+                                           idx)};
     }
 
     return value.front();
@@ -145,9 +158,9 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
     auto parsed = parse_std_type<T>(value);
 
     if (!parsed) {
-      throw std::runtime_error{
-          std::format("Failed to parse field at index {}. Error code: {}", idx,
-                      static_cast<unsigned>(parsed.error()))};
+      throw CSVReader::Error{CSVReader::Error::Kind::ParseFailure, idx,
+                               std::format("Failed to parse field at index {} (code {})",
+                                           idx, static_cast<unsigned>(parsed.error()))};
     }
 
     return *parsed;
