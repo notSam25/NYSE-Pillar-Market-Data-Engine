@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <expected>
 #include <format>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -44,6 +45,38 @@ parse_std_type(std::string_view text) noexcept {
   return value;
 }
 
+// Per spec (TAQ Products Client Spec 2.2.4): "Timestamps are in hours,
+// minutes, seconds, and nanoseconds, eg: 12:32:44.123456789". Stored as
+// nanoseconds since midnight so downstream code (gap/replay-speed metrics)
+// can do plain integer arithmetic instead of re-parsing strings
+struct SourceTime {
+  std::uint64_t _nanosSinceMidnight = 0;
+};
+
+[[nodiscard]] inline std::expected<SourceTime, ParseError>
+parse_source_time(std::string_view text) noexcept {
+  // "HH:MM:SS.nnnnnnnnn"
+  if (text.size() != 18 || text[2] != ':' || text[5] != ':' || text[8] != '.') {
+    return std::unexpected(ParseError::InvalidNumber);
+  }
+
+  const auto hours = parse_std_type<std::uint64_t>(text.substr(0, 2));
+  const auto minutes = parse_std_type<std::uint64_t>(text.substr(3, 2));
+  const auto seconds = parse_std_type<std::uint64_t>(text.substr(6, 2));
+  const auto nanos = parse_std_type<std::uint64_t>(text.substr(9, 9));
+
+  if (!hours || !minutes || !seconds || !nanos) {
+    return std::unexpected(ParseError::InvalidNumber);
+  }
+
+  constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ull;
+  constexpr std::uint64_t kNanosPerMinute = 60 * kNanosPerSecond;
+  constexpr std::uint64_t kNanosPerHour = 60 * kNanosPerMinute;
+
+  return SourceTime{*hours * kNanosPerHour + *minutes * kNanosPerMinute +
+                    *seconds * kNanosPerSecond + *nanos};
+}
+
 class CSVReader {
 public:
   explicit CSVReader(std::string_view CsvLine) noexcept : _csvLine(CsvLine) {}
@@ -62,10 +95,9 @@ public:
     Kind getKind() const noexcept { return kind; }
   };
 
-
   /*
    * Returns the view to the specified field number or an unexpected error.
-   * `FieldNum` is the zero-index field number you wish to grab.
+   * `FieldNum` is the zero-index field number you wish to grab
    * */
   [[nodiscard]] std::expected<std::string_view, FieldParseError>
   GetField(std::size_t FieldNum = 0) noexcept {
@@ -105,9 +137,25 @@ private:
   bool _exhausted = false;
 };
 
+// std::optional<T> models a field that per spec (2.2.6) is published as an
+// empty CSV field when it carries its default/not-applicable value (e.g.
+// Security Status message's Price1/Price2/SSRTriggeringVolume). Only
+// wraps the base field kinds below. No nested optionals
+template <typename T> struct IsOptionalOf : std::false_type {};
+template <typename T> struct IsOptionalOf<std::optional<T>> : std::true_type {
+  using Inner = T;
+};
+
 template <typename T>
-concept CSVField = std::same_as<T, char> || std::same_as<T, std::string> ||
-                   std::same_as<T, std::string_view> || StdParsable<T>;
+concept OptionalBaseField =
+    std::same_as<T, char> || std::same_as<T, std::string> ||
+    std::same_as<T, std::string_view> || std::same_as<T, SourceTime> ||
+    StdParsable<T>;
+
+template <typename T>
+concept CSVField = OptionalBaseField<T> ||
+                   (IsOptionalOf<T>::value &&
+                    OptionalBaseField<typename IsOptionalOf<T>::Inner>);
 
 template <typename T>
 concept CSVStruct = requires { T::field_count; };
@@ -129,8 +177,9 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
   auto field = csvReader->GetField(idx);
 
   if (!field) {
-    throw CSVReader::Error{CSVReader::Error::Kind::FieldNotFound, idx,
-                           std::format("Failed to read CSV field at index {}", idx)};
+    throw CSVReader::Error{
+        CSVReader::Error::Kind::FieldNotFound, idx,
+        std::format("Failed to read CSV field at index {}", idx)};
   }
 
   const std::string_view value = *field;
@@ -138,9 +187,10 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
   if constexpr (std::same_as<T, char>) {
 
     if (value.size() != 1) {
-      throw CSVReader::Error{CSVReader::Error::Kind::InvalidCharCount, idx,
-                               std::format("Expected exactly one character at CSV field index {}",
-                                           idx)};
+      throw CSVReader::Error{
+          CSVReader::Error::Kind::InvalidCharCount, idx,
+          std::format("Expected exactly one character at CSV field index {}",
+                      idx)};
     }
 
     return value.front();
@@ -153,17 +203,38 @@ static T PopulateField(CSVReader *csvReader, std::size_t idx) {
 
     return value;
 
+  } else if constexpr (std::same_as<T, SourceTime>) {
+
+    auto parsed = parse_source_time(value);
+
+    if (!parsed) {
+      throw CSVReader::Error{
+          CSVReader::Error::Kind::ParseFailure, idx,
+          std::format("Failed to parse SourceTime at field index {}", idx)};
+    }
+
+    return *parsed;
+
   } else if constexpr (StdParsable<T>) {
 
     auto parsed = parse_std_type<T>(value);
 
     if (!parsed) {
-      throw CSVReader::Error{CSVReader::Error::Kind::ParseFailure, idx,
-                               std::format("Failed to parse field at index {} (code {})",
-                                           idx, static_cast<unsigned>(parsed.error()))};
+      throw CSVReader::Error{
+          CSVReader::Error::Kind::ParseFailure, idx,
+          std::format("Failed to parse field at index {} (code {})", idx,
+                      static_cast<unsigned>(parsed.error()))};
     }
 
     return *parsed;
+
+  } else if constexpr (IsOptionalOf<T>::value) {
+
+    if (value.empty()) {
+      return T{std::nullopt};
+    }
+
+    return T{PopulateField<typename IsOptionalOf<T>::Inner>(csvReader, idx)};
   }
 }
 

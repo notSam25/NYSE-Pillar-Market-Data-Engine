@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <engine.hpp>
 #include <filesystem>
@@ -28,11 +31,14 @@ std::vector<std::string> ReadFirstLines(const std::filesystem::path &path,
 
 // Feeds the first 1000 lines of the real NYSE Pillar TAQ sample file through
 // the Engine end-to-end and checks that every line was accounted for, and
-// that every line whose declared message type is currently implemented by
-// the parser (SymbolIndexMapping) was parsed successfully. The expected
-// success count is derived from the sample data itself rather than
-// hardcoded, so the assertion tracks the data instead of going stale as more
-// message types are implemented.
+// that every line whose declared message type is currently implemented (the
+// full Integrated Feed set: Symbol Index Mapping, Security Status, Add/
+// Modify/Delete/Execute/Replace Order, Add Order Refresh, Retail Price
+// Improvement, Imbalance, Non-Displayed Trade, Cross Trade, Trade Cancel,
+// Cross Correction) was parsed successfully. The expected success count is
+// derived from the sample data itself rather than hardcoded, so the
+// assertion tracks the data instead of going stale as more message types
+// are implemented.
 TEST(NYSE_TAQ_CSV, first_thousand_lines_of_sample_data) {
   spdlog::set_level(spdlog::level::off);
 
@@ -49,6 +55,14 @@ TEST(NYSE_TAQ_CSV, first_thousand_lines_of_sample_data) {
   ASSERT_EQ(lines.size(), kLineCount)
       << "sample data file has fewer than " << kLineCount << " lines";
 
+  const std::array<std::uint8_t, 14> implementedMsgTypes{
+      SymbolIndexMapping,  SecurityStatusMessage, AddOrder,
+      ModifyOrder,         DeleteOrder,           OrderExecution,
+      ReplaceOrder,        RetailPriceImprovement, Imbalance,
+      AddOrderRefresh,     NonDisplayedTrade,      CrossTrade,
+      TradeCancel,         CrossCorrection,
+  };
+
   std::size_t expectedSuccess = 0;
   for (const auto &line : lines) {
     mde::schema::nyse::CSVReader reader{line};
@@ -59,14 +73,21 @@ TEST(NYSE_TAQ_CSV, first_thousand_lines_of_sample_data) {
         mde::schema::nyse::parse_std_type<std::uint8_t>(*msgTypeField);
     ASSERT_TRUE(msgType.has_value());
 
-    if (*msgType == SymbolIndexMapping) {
+    if (std::find(implementedMsgTypes.begin(), implementedMsgTypes.end(),
+                 *msgType) != implementedMsgTypes.end()) {
       expectedSuccess++;
     }
   }
 
-  auto engine = mde::Engine(mde::IngestData::NYSE_PILLAR, lines);
-  engine.ParseData();
+  std::atomic<uint64_t> deliveredCount{0};
+  auto engine = mde::Engine(
+      mde::IngestData::NYSE_PILLAR, lines,
+      [&deliveredCount](mde::messages::MessageType, void *) {
+        deliveredCount++;
+      });
+  engine.Join();
 
   EXPECT_EQ(engine.GetTotal(), kLineCount);
   EXPECT_EQ(engine.GetSuccess(), expectedSuccess);
+  EXPECT_EQ(deliveredCount.load(), expectedSuccess);
 }
